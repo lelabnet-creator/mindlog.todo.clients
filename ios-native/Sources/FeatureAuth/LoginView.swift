@@ -39,6 +39,13 @@ public struct LoginView: View {
         .scrollBounceBehavior(.basedOnSize)
         .background(MindlogColor.background)
         .onAppear { viewModel.start() }
+        // Already signed in to mindlog id in Safari: skip this form. The flag
+        // is consumed first, so a second change cannot open a second sheet.
+        .onChange(of: viewModel.autoSso) {
+            guard viewModel.autoSso else { return }
+            viewModel.onAutoSsoHandled()
+            startMindlogId(create: false)
+        }
     }
 
     // MARK: - Email and password

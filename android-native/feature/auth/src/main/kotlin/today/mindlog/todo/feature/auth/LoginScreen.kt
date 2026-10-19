@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -41,6 +42,15 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // Already signed in to mindlog id in the browser: skip this form. The
+    // flag is consumed first, so a recomposition cannot open a second tab.
+    LaunchedEffect(state.autoSso) {
+        if (state.autoSso) {
+            viewModel.onAutoSsoHandled()
+            viewModel.openMindlogId(context, create = false)
+        }
+    }
 
     Column(
         modifier = Modifier

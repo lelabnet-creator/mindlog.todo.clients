@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { api, setTokens } from '../api/client';
 import type { User } from '../types';
 import { onDeepLink } from '../native';
+import { resetAutoSso, suppressAutoSso } from './sso';
 
 interface AuthState {
   user: User | null;
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadUser(): Promise<void> {
     try {
       setUser(await api.me());
+      resetAutoSso();
     } catch {
       setUser(null);
     }
@@ -97,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await loadUser();
     },
     logout: async () => {
+      // Before the call: even a logout the server fails to record must not
+      // bounce through mindlog id and sign the user straight back in.
+      suppressAutoSso();
       await api.logout();
       setUser(null);
     },

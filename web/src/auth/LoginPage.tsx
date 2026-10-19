@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
 import { useI18n } from '../i18n';
+import { isNativeShell } from '../native';
 import { useAuth } from './AuthContext';
+import { autoSsoAllowed, suppressAutoSso } from './sso';
 import type { VersionInfo } from '../types';
 
 /**
@@ -26,6 +28,7 @@ export function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [providers, setProviders] = useState<Providers>(NO_PROVIDERS);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     void api
@@ -33,6 +36,17 @@ export function LoginPage() {
       .then((v) => setProviders(v.authProviders ?? NO_PROVIDERS))
       .catch(() => setProviders(NO_PROVIDERS));
   }, []);
+
+  // Already signed in to mindlog id? Then this page has nothing to ask: hand
+  // over to the IdP, which comes straight back with a code. Rules in ./sso.
+  // Not from the Capacitor shell, where the IdP opens in the system browser —
+  // leaving the app on its own at launch would be a surprise, not a shortcut.
+  useEffect(() => {
+    if (!providers.mindlogId || mindlogIdNeedsEmail || isNativeShell() || !autoSsoAllowed()) return;
+    suppressAutoSso();
+    setRedirecting(true);
+    window.location.assign(api.mindlogIdUrl());
+  }, [providers.mindlogId, mindlogIdNeedsEmail]);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -51,6 +65,15 @@ export function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (redirecting) {
+    return (
+      <div className="auth-card">
+        <h1>mindlog.todo</h1>
+        <p className="muted">{t('login.ssoRedirecting')}</p>
+      </div>
+    );
   }
 
   // mindlog id signed the user in but the account has no email — ask for one to

@@ -23,6 +23,8 @@ data class LoginUiState(
     /** Non-null once mindlog id returned an account without an email. */
     val pendingToken: String? = null,
     val pendingEmail: String = "",
+    /** Set once when the screen should open mindlog id on its own. */
+    val autoSso: Boolean = false,
 ) {
     val canSubmit: Boolean get() = !busy && email.isNotBlank() && password.isNotBlank()
 }
@@ -40,7 +42,11 @@ class LoginViewModel @Inject constructor(
         // Ask the server which sign-in paths it has configured before drawing
         // any of their buttons.
         viewModelScope.launch {
-            _state.update { it.copy(providers = authRepository.authProviders()) }
+            val providers = authRepository.authProviders()
+            // Claimed only when the button exists: a claim spent on a server
+            // without mindlog id would cost the next screen its attempt.
+            val auto = providers.mindlogId && authRepository.claimAutoSso()
+            _state.update { it.copy(providers = providers, autoSso = auto) }
         }
         viewModelScope.launch {
             callbackBus.callbacks.collect(::onOAuthCallback)
@@ -50,6 +56,7 @@ class LoginViewModel @Inject constructor(
     fun onEmailChange(value: String) = _state.update { it.copy(email = value, error = null) }
     fun onPasswordChange(value: String) = _state.update { it.copy(password = value, error = null) }
     fun onPendingEmailChange(value: String) = _state.update { it.copy(pendingEmail = value) }
+    fun onAutoSsoHandled() = _state.update { it.copy(autoSso = false) }
 
     fun signIn() {
         val current = _state.value

@@ -22,6 +22,16 @@ public final class AuthRepository {
     private let sessionStore: SessionStore
     private let serverStore: ServerStore
 
+    /// Whether the sign-in screen may hand over to mindlog id on its own.
+    ///
+    /// Someone already signed in to mindlog id in Safari should not see our
+    /// form: the authentication session shares that session and the IdP comes
+    /// straight back with a code. But once per launch at most, and never right
+    /// after a logout — otherwise dismissing the sheet would reopen it forever,
+    /// and signing out would sign the user straight back in. Same rules as the
+    /// Android and web clients.
+    private var autoSsoAllowed = true
+
     public init(authAPI: AuthAPI, sessionStore: SessionStore, serverStore: ServerStore) {
         self.authAPI = authAPI
         self.sessionStore = sessionStore
@@ -48,6 +58,7 @@ public final class AuthRepository {
                 accessToken: result.accessToken,
                 refreshToken: result.refreshToken
             )
+            autoSsoAllowed = true
         } catch {
             // Only a refusal ends the session. An unreachable server means we do
             // not know yet — clearing on that would sign the user out every time
@@ -71,6 +82,7 @@ public final class AuthRepository {
                 accessToken: result.accessToken,
                 refreshToken: result.refreshToken
             )
+            autoSsoAllowed = true
             return .success(result)
         } catch {
             return .failure(error)
@@ -92,6 +104,7 @@ public final class AuthRepository {
                 accessToken: result.accessToken,
                 refreshToken: result.refreshToken
             )
+            autoSsoAllowed = true
             return .success(result)
         } catch {
             return .failure(error)
@@ -101,9 +114,18 @@ public final class AuthRepository {
     /// Called when the OAuth round trip hands the tokens back.
     public func adoptTokens(accessToken: String, refreshToken: String) {
         sessionStore.save(accessToken: accessToken, refreshToken: refreshToken)
+        autoSsoAllowed = true
+    }
+
+    /// True at most once until the next sign-in; see `autoSsoAllowed`.
+    public func claimAutoSso() -> Bool {
+        guard autoSsoAllowed else { return false }
+        autoSsoAllowed = false
+        return true
     }
 
     public func logout() async {
+        autoSsoAllowed = false
         // Clear locally whatever the server says: a network failure must not
         // leave the user apparently signed in.
         if let refreshToken = sessionStore.refreshToken {

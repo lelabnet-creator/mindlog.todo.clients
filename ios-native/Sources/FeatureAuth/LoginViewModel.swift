@@ -21,6 +21,9 @@ public final class LoginViewModel {
     /// Non-nil once mindlog id returned an account without an email.
     public private(set) var pendingToken: String?
 
+    /// Set once when the screen should open mindlog id on its own.
+    public private(set) var autoSso = false
+
     @ObservationIgnored private var listening = false
 
     public init(authRepository: AuthRepository, callbackBus: OAuthCallbackBus) {
@@ -41,10 +44,19 @@ public final class LoginViewModel {
 
         // Ask the server which sign-in paths it has configured before drawing
         // any of their buttons.
-        Task { providers = await authRepository.authProviders() }
+        Task {
+            providers = await authRepository.authProviders()
+            // Claimed only when the button exists: a claim spent on a server
+            // without mindlog id would cost the next screen its attempt.
+            autoSso = providers.mindlogId && authRepository.claimAutoSso()
+        }
         Task {
             for await callback in callbackBus.callbacks { handle(callback) }
         }
+    }
+
+    public func onAutoSsoHandled() {
+        autoSso = false
     }
 
     public func onFieldEdited() {

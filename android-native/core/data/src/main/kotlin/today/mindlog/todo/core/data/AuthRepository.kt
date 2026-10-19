@@ -29,6 +29,17 @@ class AuthRepository @Inject constructor(
     val signedIn: StateFlow<Boolean?> = sessionStore.signedIn
 
     /**
+     * Whether the sign-in screen may hand over to mindlog id on its own.
+     *
+     * Someone already signed in to mindlog id in the browser should not see
+     * our form: the Custom Tab shares that session and the IdP comes straight
+     * back with a code. But once per process at most, and never right after a
+     * logout — otherwise closing the tab would reopen it forever, and signing
+     * out would sign the user straight back in. Same rules as the web client.
+     */
+    @Volatile private var autoSsoAllowed = true
+
+    /**
      * Resumes a stored session, or reports that there is none.
      *
      * Deliberately a *refresh*, not a token read: the access token is never
@@ -43,7 +54,10 @@ class AuthRepository @Inject constructor(
             return
         }
         runCatching { authApi.refresh(RefreshRequest(refreshToken)) }
-            .onSuccess { sessionStore.save(it.accessToken, it.refreshToken) }
+            .onSuccess {
+                sessionStore.save(it.accessToken, it.refreshToken)
+                autoSsoAllowed = true
+            }
             .onFailure { cause ->
                 // Only a refusal ends the session. An unreachable server means
                 // we do not know yet — clearing on that would sign the user out
@@ -59,7 +73,10 @@ class AuthRepository @Inject constructor(
 
     suspend fun login(email: String, password: String): Result<AuthResult> =
         runCatching { authApi.login(LoginRequest(email = email, password = password)) }
-            .onSuccess { sessionStore.save(it.accessToken, it.refreshToken) }
+            .onSuccess {
+                sessionStore.save(it.accessToken, it.refreshToken)
+                autoSsoAllowed = true
+            }
 
     /**
      * Finishes a mindlog id sign-in for an account with no email address —
@@ -69,14 +86,26 @@ class AuthRepository @Inject constructor(
     suspend fun completeMindlogId(pendingToken: String, email: String): Result<AuthResult> =
         runCatching {
             authApi.completeMindlogId(CompleteMindlogIdRequest(pendingToken, email))
-        }.onSuccess { sessionStore.save(it.accessToken, it.refreshToken) }
+        }.onSuccess {
+            sessionStore.save(it.accessToken, it.refreshToken)
+            autoSsoAllowed = true
+        }
 
     /** Called when the OAuth round trip hands the tokens back on the deep link. */
     suspend fun adoptTokens(accessToken: String, refreshToken: String) {
         sessionStore.save(accessToken, refreshToken)
+        autoSsoAllowed = true
+    }
+
+    /** True at most once until the next sign-in; see [autoSsoAllowed]. */
+    fun claimAutoSso(): Boolean {
+        if (!autoSsoAllowed) return false
+        autoSsoAllowed = false
+        return true
     }
 
     suspend fun logout() {
+        autoSsoAllowed = false
         val refreshToken = sessionStore.refreshToken()
         // Clear locally whatever the server says: a network failure must not
         // leave the user apparently signed in.
